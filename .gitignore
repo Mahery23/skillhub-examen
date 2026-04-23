@@ -19,3 +19,6 @@ auth-service/.env
 .vscode/
 .idea/
 *.iml
+
+# Environnement local (contient des secrets)
+.env

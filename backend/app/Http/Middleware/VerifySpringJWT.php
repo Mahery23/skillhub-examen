@@ -8,10 +8,11 @@ use Symfony\Component\HttpFoundation\Response;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Firebase\JWT\ExpiredException;
+use Firebase\JWT\SignatureInvalidException;
 
 /**
  * Valide le JWT émis par le auth-service Spring Boot.
- * Injecte l'utilisateur (email, role, name) dans la requête.
+ * Injecte email, role et name dans la requête pour les controllers.
  */
 class VerifySpringJWT
 {
@@ -28,6 +29,8 @@ class VerifySpringJWT
             $decoded = JWT::decode($token, new Key($secret, 'HS256'));
         } catch (ExpiredException) {
             return response()->json(['message' => 'Token expiré.'], 401);
+        } catch (SignatureInvalidException) {
+            return response()->json(['message' => 'Signature invalide.'], 401);
         } catch (\Exception) {
             return response()->json(['message' => 'Token invalide.'], 401);
         }
