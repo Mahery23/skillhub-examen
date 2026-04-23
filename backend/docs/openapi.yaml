@@ -1,0 +1,737 @@
+openapi: 3.0.3
+info:
+  title: SkillHub API
+  version: 1.0.0
+  description: |
+    Documentation OpenAPI de l'API SkillHub.
+    Cette spécification couvre l'authentification JWT, les formations,
+    les modules et les inscriptions apprenant.
+servers:
+  - url: http://localhost:8000/api
+    description: Serveur de développement local
+
+tags:
+  - name: Auth
+    description: Inscription, connexion, profil et déconnexion
+  - name: Formations
+    description: Catalogue et gestion des formations
+  - name: Modules
+    description: Gestion des modules de formation
+  - name: Inscriptions
+    description: Inscription des apprenants aux formations
+
+paths:
+  /register:
+    post:
+      tags: [Auth]
+      summary: Créer un compte utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              example:
+                value:
+                  name: Amina
+                  email: amina@example.test
+                  password: password123
+                  role: apprenant
+      responses:
+        '201':
+          description: Utilisateur créé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Authentifier un utilisateur et obtenir un token JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              example:
+                value:
+                  email: amina@example.test
+                  password: password123
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Identifiants invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /profile:
+    get:
+      tags: [Auth]
+      summary: Récupérer le profil de l'utilisateur connecté
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil utilisateur
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Non authentifié
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /logout:
+    post:
+      tags: [Auth]
+      summary: Invalider le token JWT courant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Déconnexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          description: Non authentifié
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /formations:
+    get:
+      tags: [Formations]
+      summary: Lister les formations publiques
+      responses:
+        '200':
+          description: Liste des formations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FormationSummary'
+    post:
+      tags: [Formations]
+      summary: Créer une formation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormationWriteRequest'
+      responses:
+        '201':
+          description: Formation créée avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Formation created successfully
+                  formation:
+                    $ref: '#/components/schemas/FormationDetail'
+        '401':
+          description: Non authentifié
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /formations/{formation}:
+    parameters:
+      - $ref: '#/components/parameters/FormationId'
+    get:
+      tags: [Formations]
+      summary: Consulter une formation publique
+      responses:
+        '200':
+          description: Détails de la formation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formation:
+                    $ref: '#/components/schemas/FormationDetail'
+    put:
+      tags: [Formations]
+      summary: Mettre à jour une formation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormationWriteRequest'
+      responses:
+        '200':
+          description: Formation mise à jour avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  formation:
+                    $ref: '#/components/schemas/FormationDetail'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+    delete:
+      tags: [Formations]
+      summary: Supprimer une formation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Formation supprimée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /formations/{formation}/modules:
+    parameters:
+      - $ref: '#/components/parameters/FormationId'
+    get:
+      tags: [Modules]
+      summary: Lister les modules d'une formation
+      responses:
+        '200':
+          description: Liste des modules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Module'
+    post:
+      tags: [Modules]
+      summary: Ajouter un module à une formation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleWriteRequest'
+      responses:
+        '201':
+          description: Module créé avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  module:
+                    $ref: '#/components/schemas/Module'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+  /modules/{module}:
+    parameters:
+      - $ref: '#/components/parameters/ModuleId'
+    put:
+      tags: [Modules]
+      summary: Mettre à jour un module
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModuleWriteRequest'
+      responses:
+        '200':
+          description: Module mis à jour avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  module:
+                    $ref: '#/components/schemas/Module'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+    delete:
+      tags: [Modules]
+      summary: Supprimer un module
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Module supprimé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          description: Accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '422':
+          description: Contrainte métier sur le nombre minimal de modules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /formations/{formation}/inscription:
+    parameters:
+      - $ref: '#/components/parameters/FormationId'
+    post:
+      tags: [Inscriptions]
+      summary: Inscrire l'apprenant connecté à une formation
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Inscription créée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  enrollment:
+                    $ref: '#/components/schemas/Enrollment'
+        '403':
+          description: Réservé à un apprenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '409':
+          description: Déjà inscrit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+    delete:
+      tags: [Inscriptions]
+      summary: Désinscrire l'apprenant connecté d'une formation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inscription supprimée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          description: Réservé à un apprenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Inscription introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /apprenant/formations:
+    get:
+      tags: [Inscriptions]
+      summary: Lister les formations suivies par l'apprenant connecté
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Formations suivies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EnrollmentFormationItem'
+        '403':
+          description: Réservé à un apprenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+components:
+  parameters:
+    FormationId:
+      name: formation
+      in: path
+      required: true
+      description: Identifiant de la formation
+      schema:
+        type: integer
+        format: int64
+    ModuleId:
+      name: module
+      in: path
+      required: true
+      description: Identifiant du module
+      schema:
+        type: integer
+        format: int64
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Validation error
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      required: [message, errors]
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password, role]
+      properties:
+        name:
+          type: string
+          example: Amina
+        email:
+          type: string
+          format: email
+          example: amina@example.test
+        password:
+          type: string
+          format: password
+          example: password123
+        role:
+          type: string
+          enum: [apprenant, formateur]
+          example: apprenant
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: amina@example.test
+        password:
+          type: string
+          format: password
+          example: password123
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Amina
+        nom:
+          type: string
+          example: Amina
+        email:
+          type: string
+          format: email
+          example: amina@example.test
+        role:
+          type: string
+          enum: [apprenant, formateur]
+          example: apprenant
+        date_creation:
+          type: string
+          format: date-time
+      required: [id, name, nom, email, role]
+
+    AuthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required: [message, token, user]
+
+    FormationWriteRequest:
+      type: object
+      required: [titre, description, categorie, niveau]
+      properties:
+        titre:
+          type: string
+          example: Laravel API
+        description:
+          type: string
+          example: Construire une API moderne avec Laravel.
+        categorie:
+          type: string
+          example: Développement web
+        niveau:
+          type: string
+          enum: [Débutant, Intermédiaire, Avancé]
+          example: Débutant
+
+    FormationSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        titre:
+          type: string
+        niveau:
+          type: string
+        categorie:
+          type: string
+        vues:
+          type: integer
+        apprenants:
+          type: integer
+        formateur:
+          type: object
+          properties:
+            id:
+              type: integer
+            nom:
+              type: string
+        mini_description:
+          type: string
+      required: [id, titre, niveau, categorie, vues, apprenants, formateur]
+
+    FormationDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        titre:
+          type: string
+        niveau:
+          type: string
+        categorie:
+          type: string
+        vues:
+          type: integer
+        apprenants:
+          type: integer
+        formateur:
+          type: object
+          properties:
+            id:
+              type: integer
+            nom:
+              type: string
+        date_creation:
+          type: string
+          format: date-time
+        description:
+          type: string
+        modules:
+          type: array
+          items:
+            $ref: '#/components/schemas/Module'
+      required: [id, titre, niveau, categorie, vues, apprenants, formateur, date_creation]
+
+    ModuleWriteRequest:
+      type: object
+      required: [titre, contenu, ordre]
+      properties:
+        titre:
+          type: string
+          example: Introduction
+        contenu:
+          type: string
+          example: Présentation du contenu du module.
+        ordre:
+          type: integer
+          example: 1
+
+    Module:
+      type: object
+      properties:
+        id:
+          type: integer
+        titre:
+          type: string
+        contenu:
+          type: string
+        formation_id:
+          type: integer
+        ordre:
+          type: integer
+        date_creation:
+          type: string
+          format: date-time
+      required: [id, titre, contenu, formation_id, ordre, date_creation]
+
+    Enrollment:
+      type: object
+      properties:
+        id:
+          type: integer
+        utilisateur_id:
+          type: integer
+        formation_id:
+          type: integer
+        progression:
+          type: integer
+        date_inscription:
+          type: string
+          format: date-time
+      required: [id, utilisateur_id, formation_id, progression, date_inscription]
+
+    EnrollmentFormationItem:
+      type: object
+      properties:
+        enrollment_id:
+          type: integer
+        progression:
+          type: integer
+        date_inscription:
+          type: string
+          format: date-time
+        formation:
+          type: object
+          properties:
+            id:
+              type: integer
+            titre:
+              type: string
+            description:
+              type: string
+            niveau:
+              type: string
+            categorie:
+              type: string
+            vues:
+              type: integer
+            apprenants:
+              type: integer
+            formateur:
+              type: object
+              properties:
+                id:
+                  type: integer
+                nom:
+                  type: string
+      required: [enrollment_id, progression, date_inscription, formation]
+

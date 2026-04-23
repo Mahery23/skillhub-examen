@@ -1,0 +1,25 @@
+# Dépendances PHP — réinstallées par Composer dans le builder
+vendor/
+
+# Fichiers d'environnement — JAMAIS dans une image Docker
+.env
+.env.local
+
+# Cache local — régénéré dans le container
+bootstrap/cache/*
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+
+# Git et CI — inutiles dans l'image
+.git/
+.github/
+
+# Tests — pas nécessaires en production
+tests/
+
+# Fichiers divers
+*.md
+.idea/
+.vscode/

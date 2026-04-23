@@ -1,0 +1,18 @@
+# Dépendances — réinstallées par npm dans le builder
+node_modules/
+
+# Dossier de build — régénéré dans le container
+dist/
+
+# Fichiers d'environnement
+.env
+.env.local
+
+# Git et CI
+.git/
+.github/
+
+# Fichiers divers
+*.md
+.idea/
+.vscode/
