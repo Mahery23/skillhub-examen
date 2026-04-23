@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.example.authserver.fx.LoginController"
+      styleClass="root-pane"
+      alignment="CENTER"
+      spacing="0">
+
+    <!-- Header -->
+    <VBox styleClass="header" alignment="CENTER" spacing="6">
+        <Label text="🔐" styleClass="header-icon"/>
+        <Label text="Authentification Forte" styleClass="header-title"/>
+        <Label text="TP3 — Protocole HMAC-SHA256" styleClass="header-subtitle"/>
+    </VBox>
+
+    <!-- Form -->
+    <VBox styleClass="form-card" spacing="16">
+        <padding><Insets top="30" right="40" bottom="30" left="40"/></padding>
+
+        <Label text="Connexion" styleClass="form-title"/>
+
+        <VBox spacing="6">
+            <Label text="Adresse email" styleClass="field-label"/>
+            <TextField fx:id="emailField" promptText="exemple@email.com" styleClass="text-field"/>
+        </VBox>
+
+        <VBox spacing="6">
+            <Label text="Mot de passe" styleClass="field-label"/>
+            <PasswordField fx:id="passwordField" promptText="••••••••" styleClass="text-field"/>
+        </VBox>
+
+        <Label fx:id="statusLabel" text="" styleClass="status-label" wrapText="true"/>
+
+        <Button fx:id="loginButton" text="Se connecter"
+                styleClass="btn-primary"
+                maxWidth="Infinity"
+                onAction="#handleLogin"/>
+
+        <HBox alignment="CENTER" spacing="4">
+            <Label text="Pas encore de compte ?" styleClass="link-text"/>
+            <Hyperlink text="S'inscrire" onAction="#goToRegister" styleClass="hyperlink"/>
+        </HBox>
+    </VBox>
+
+</VBox>

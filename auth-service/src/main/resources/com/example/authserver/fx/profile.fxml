@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.example.authserver.fx.ProfileController"
+      styleClass="root-pane"
+      alignment="CENTER"
+      spacing="0">
+
+    <!-- Header -->
+    <VBox styleClass="header" alignment="CENTER" spacing="6">
+        <Label text="✅" styleClass="header-icon"/>
+        <Label fx:id="welcomeLabel" text="Bienvenue !" styleClass="header-title"/>
+        <Label fx:id="emailLabel" text="" styleClass="header-subtitle"/>
+    </VBox>
+
+    <!-- Scrollable content -->
+    <ScrollPane fitToWidth="true" style="-fx-background-color: #1a1a2e; -fx-background: #1a1a2e;" VBox.vgrow="ALWAYS">
+        <VBox spacing="16" style="-fx-background-color: #1a1a2e;">
+            <padding><Insets top="24" right="40" bottom="24" left="40"/></padding>
+
+            <!-- Section Token JWT -->
+            <VBox styleClass="form-card" spacing="12">
+                <padding><Insets top="20" right="24" bottom="20" left="24"/></padding>
+
+                <Label text="🔑 Token JWT" styleClass="form-title"/>
+                <Label text="Valide 15 minutes. A utiliser dans Authorization: Bearer"
+                       styleClass="info-text" wrapText="true"/>
+
+                <TextArea fx:id="tokenArea"
+                          styleClass="token-area"
+                          editable="false"
+                          wrapText="true"
+                          prefHeight="80"/>
+
+                <HBox alignment="CENTER_RIGHT" spacing="8">
+                    <Label fx:id="copyLabel" text="" styleClass="copy-label"/>
+                    <Button text="📋 Copier"
+                            styleClass="btn-secondary"
+                            onAction="#copyToken"/>
+                </HBox>
+
+                <Label fx:id="expiresLabel" text="" styleClass="expires-label"/>
+            </VBox>
+
+            <!-- Section Changer mot de passe -->
+            <VBox styleClass="form-card" spacing="12">
+                <padding><Insets top="20" right="24" bottom="20" left="24"/></padding>
+
+                <Label text="🔒 Changer le mot de passe" styleClass="form-title"/>
+
+                <VBox spacing="6">
+                    <Label text="Ancien mot de passe" styleClass="field-label"/>
+                    <PasswordField fx:id="oldPasswordField"
+                                   promptText="••••••••"
+                                   styleClass="text-field"/>
+                </VBox>
+
+                <VBox spacing="6">
+                    <Label text="Nouveau mot de passe" styleClass="field-label"/>
+                    <PasswordField fx:id="newPasswordField"
+                                   promptText="Min 12 cars, maj, chiffre, special"
+                                   styleClass="text-field"/>
+                </VBox>
+
+                <VBox spacing="6">
+                    <Label text="Confirmer le nouveau mot de passe" styleClass="field-label"/>
+                    <PasswordField fx:id="confirmPasswordField"
+                                   promptText="••••••••"
+                                   styleClass="text-field"/>
+                </VBox>
+
+                <Label fx:id="changeStatusLabel" text="" styleClass="status-label" wrapText="true"/>
+
+                <Button fx:id="changeButton"
+                        text="Changer le mot de passe"
+                        styleClass="btn-primary"
+                        maxWidth="Infinity"
+                        onAction="#handleChangePassword"/>
+            </VBox>
+
+            <!-- Bouton deconnexion -->
+            <Button text="Se déconnecter"
+                    styleClass="btn-logout"
+                    maxWidth="Infinity"
+                    onAction="#handleLogout"/>
+
+        </VBox>
+    </ScrollPane>
+
+</VBox>
