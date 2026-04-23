@@ -86,9 +86,9 @@ function AppContent() {
         const events = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart']
         const onActivity = () => markActivity()
 
-        events.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }))
+        events.forEach((eventName) => globalThis.addEventListener(eventName, onActivity, { passive: true }))
 
-        const intervalId = window.setInterval(() => {
+        const intervalId = globalThis.setInterval(() => {
             const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || 0)
 
             if (lastActivity && Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
@@ -100,8 +100,8 @@ function AppContent() {
         }, 30 * 1000)
 
         return () => {
-            events.forEach((eventName) => window.removeEventListener(eventName, onActivity))
-            window.clearInterval(intervalId)
+            events.forEach((eventName) => globalThis.removeEventListener(eventName, onActivity))
+            globalThis.clearInterval(intervalId)
         }
     }, [navigate, user])
 

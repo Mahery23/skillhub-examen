@@ -95,9 +95,12 @@ class FormationController extends Controller
             return false;
         }
 
+        // Hash SHA-256 (et non SHA-1) pour l'identifiant de cache d'un visiteur
+        // anonyme : meme s'il ne s'agit pas d'un contexte cryptographique sensible,
+        // on evite les algorithmes faibles signales par SonarCloud (php:S4790).
         $viewerKey = $user
             ? 'user:' . $user->id
-            : 'guest:' . sha1(($request->ip() ?? 'unknown') . '|' . ($request->userAgent() ?? 'unknown'));
+            : 'guest:' . hash('sha256', ($request->ip() ?? 'unknown') . '|' . ($request->userAgent() ?? 'unknown'));
 
         $cacheKey = sprintf('formation:%d:view:%s', $formation->id, $viewerKey);
 

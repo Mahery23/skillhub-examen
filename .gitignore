@@ -14,3 +14,8 @@ auth-service/.env
 # Divers
 .DS_Store
 *.log
+
+# IDE
+.vscode/
+.idea/
+*.iml

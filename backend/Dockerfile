@@ -40,8 +40,9 @@ WORKDIR /app
 # → les dépendances ne sont pas réinstallées à chaque build
 COPY composer.json composer.lock ./
 
+# On inclut les deps de dev (PHPUnit, Collision, Pint) pour que `php artisan test`
+# fonctionne dans le container. Overhead : ~20 MB, negligeable pour ce projet.
 RUN composer install \
-        --no-dev \
         --optimize-autoloader \
         --no-interaction \
         --no-scripts
@@ -77,6 +78,10 @@ RUN apk add --no-cache \
 
 RUN docker-php-ext-install pdo pdo_mysql zip bcmath gd
 RUN pecl install mongodb && docker-php-ext-enable mongodb
+
+# pcov : extension de code coverage (utilisee par PHPUnit).
+# Beaucoup plus rapide que xdebug, uniquement activee quand PHPUnit le demande.
+RUN pecl install pcov && docker-php-ext-enable pcov
 
 WORKDIR /var/www/html
 

@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Middleware\CheckRole;
-use Illuminate\Auth\AuthenticationException;
+use App\Http\Middleware\VerifySpringJWT;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,17 +16,17 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'check.role' => CheckRole::class,
+            // Ancien middleware de rôle (conservé pour compatibilité)
+            'check.role'   => CheckRole::class,
+            // Nouveau middleware : valide le JWT émis par Spring Boot
+            'spring.auth'  => VerifySpringJWT::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->render(function (AuthenticationException $exception, Request $request) {
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $exception, Request $request) {
             if ($request->is('api/*')) {
-                return response()->json([
-                    'message' => 'Unauthenticated.',
-                ], 401);
+                return response()->json(['message' => 'Unauthenticated.'], 401);
             }
-
             return null;
         });
     })->create();

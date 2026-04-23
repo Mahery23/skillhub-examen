@@ -1,6 +1,13 @@
 import { Modal, Button, Form } from 'react-bootstrap'
 import PropTypes from 'prop-types'
 
+// Libelle du bouton de sauvegarde (creation vs edition, avec etat "en cours").
+// Extrait hors du composant pour eviter un ternaire imbrique signale par Sonar.
+const getSaveButtonLabel = (isSaving, isEditing) => {
+  if (isSaving) return isEditing ? 'Modification...' : 'Création...'
+  return isEditing ? 'Enregistrer' : 'Ajouter'
+}
+
 function ModuleModal({ show, onHide, onSave, module, isSaving, error, formationModules }) {
   const moduleCountInFormation = formationModules ? formationModules.length : 0
   const isEditing = module?.id
@@ -48,7 +55,7 @@ function ModuleModal({ show, onHide, onSave, module, isSaving, error, formationM
             <Form.Select
               id="module-ordre"
               value={module?.ordre || ''}
-              onChange={(e) => handleFormChange('ordre', parseInt(e.target.value))}
+              onChange={(e) => handleFormChange('ordre', Number.parseInt(e.target.value, 10))}
             >
               <option value="">Sélectionner une position</option>
               {getAvailableOrdres().map((ordre) => (
@@ -111,7 +118,7 @@ function ModuleModal({ show, onHide, onSave, module, isSaving, error, formationM
             !module?.ordre
           }
         >
-          {isSaving ? (isEditing ? 'Modification...' : 'Création...') : (isEditing ? 'Enregistrer' : 'Ajouter')}
+          {getSaveButtonLabel(isSaving, Boolean(isEditing))}
         </Button>
       </Modal.Footer>
     </Modal>

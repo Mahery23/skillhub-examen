@@ -15,13 +15,13 @@
     <artifactId>authserver</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>authserver</name>
-    <description>TP3 - Authentification Forte avec HMAC</description>
+    <description>Auth Service - SkillHub SSO</description>
 
     <properties>
         <java.version>21</java.version>
         <jjwt.version>0.12.3</jjwt.version>
         <sonar.organization>mahery23</sonar.organization>
-        <sonar.projectKey>Mahery23_authserver-tp4</sonar.projectKey>
+        <sonar.projectKey>Mahery23_skillhub-examen</sonar.projectKey>
         <sonar.coverage.jacoco.xmlReportPaths>
             target/site/jacoco/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
@@ -50,11 +50,18 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- H2 Database -->
+        <!-- MySQL -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- H2 pour les tests uniquement -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
 
         <!-- Lombok -->
@@ -62,18 +69,6 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
-        </dependency>
-
-        <!-- JavaFX -->
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-controls</artifactId>
-            <version>21</version>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-fxml</artifactId>
-            <version>21</version>
         </dependency>
 
         <!-- JWT -->
@@ -106,11 +101,16 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Actuator : expose /actuator/health pour le healthcheck Docker -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -124,7 +124,7 @@
                 </configuration>
             </plugin>
 
-            <!-- JaCoCo pour la couverture de code (SonarCloud) -->
+            <!-- JaCoCo pour SonarCloud -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -179,17 +179,6 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- Plugin JavaFX -->
-            <plugin>
-                <groupId>org.openjfx</groupId>
-                <artifactId>javafx-maven-plugin</artifactId>
-                <version>0.0.8</version>
-                <configuration>
-                    <mainClass>com.example.authserver.fx.MainApp</mainClass>
-                </configuration>
-            </plugin>
-
         </plugins>
     </build>
 </project>

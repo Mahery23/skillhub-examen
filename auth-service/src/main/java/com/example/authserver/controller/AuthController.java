@@ -8,70 +8,54 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.example.authserver.dto.ChangePasswordRequest;
-import org.springframework.security.core.Authentication;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Contrôleur REST pour l'authentification forte.
- *
- * <h2>Endpoints</h2>
- * <ul>
- *   <li>POST /api/auth/login — authentification par HMAC</li>
- * </ul>
+ * Point d'entrée REST du microservice d'authentification forte.
+ * Endpoints publics : /api/auth/register, /api/auth/challenge, /api/auth/login
  */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final AuthService authService;
 
     /**
-     * Authentification forte par preuve HMAC.
-     *
-     * <p>Le client envoie {@code {email, nonce, timestamp, hmac}} sans jamais
-     * transmettre le mot de passe. Le serveur recalcule le HMAC et compare
-     * en temps constant.</p>
-     *
-     * @param request le payload JSON de login
-     * @return 200 + {accessToken, expiresAt} si valide, 401 sinon
+     * Inscription d'un nouvel utilisateur.
+     * POST /api/auth/register
+     * Body: { email, password, name, role }
      */
-    @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) throws CryptoException {
-        LoginResponse response = authService.login(request);
-        return ResponseEntity.ok(response);
+    @PostMapping("/register")
+    public ResponseEntity<Map<String, String>> register(
+            @RequestBody Map<String, String> body) throws CryptoException {
+        authService.register(
+                body.get("email"),
+                body.get("password"),
+                body.getOrDefault("name", "Utilisateur"),
+                body.getOrDefault("role", "apprenant")
+        );
+        return ResponseEntity.ok(Map.of("message", "Utilisateur créé avec succès."));
     }
 
     /**
-     * Change le mot de passe de l'utilisateur authentifie.
-     * Necessite un JWT valide dans le header Authorization.
-     *
-     * @param request        le payload JSON avec oldPassword, newPassword, confirmPassword
-     * @param authentication l'authentification injectee par Spring Security
-     * @return 200 OK si le changement est reussi
+     * Génère un nonce de challenge pour le login HMAC.
+     * GET /api/auth/challenge?email=...
      */
-    @PutMapping("/change-password")
-    public ResponseEntity<Map<String, String>> changePassword(
-            @RequestBody ChangePasswordRequest request,
-            Authentication authentication) throws CryptoException {
+    @GetMapping("/challenge")
+    public ResponseEntity<Map<String, String>> challenge(@RequestParam String email) {
+        String nonce = authService.generateChallenge(email);
+        return ResponseEntity.ok(Map.of("nonce", nonce));
+    }
 
-        // Verifier que l'utilisateur est bien authentifie
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Non authentifie.");
-        }
-
-        String email = authentication.getName();
-
-        authService.changePassword(
-                email,
-                request.getOldPassword(),
-                request.getNewPassword(),
-                request.getConfirmPassword()
-        );
-
-        return ResponseEntity.ok(Map.of("message", "Mot de passe change avec succes."));
+    /**
+     * Login fort HMAC.
+     * POST /api/auth/login
+     * Body: { email, nonce, timestamp, hmac }
+     */
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) throws CryptoException {
+        return ResponseEntity.ok(authService.login(request));
     }
 }

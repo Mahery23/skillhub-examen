@@ -1,24 +1,42 @@
-# Etape 1 : Build avec Maven
-FROM maven:3.9-eclipse-temurin-21 AS build
+# ═══════════════════════════════════════════
+# Stage 1 — builder
+# Rôle : compiler le projet Spring Boot en JAR
+# ═══════════════════════════════════════════
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
+
 WORKDIR /app
 
-# Copier pom.xml et telecharger les dependances (cache Docker)
+# On copie pom.xml EN PREMIER pour profiter du cache Docker
+# Si les dépendances n'ont pas changé, Maven ne les retélécharge pas
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
-# Copier le code source et builder
+# Copie du code source
 COPY src ./src
+
+# Compilation et packaging (on saute les tests — ils tournent en CI)
 RUN mvn package -DskipTests -B
 
-# Etape 2 : Image finale legere
-FROM eclipse-temurin:21-jre
+
+# ═══════════════════════════════════════════
+# Stage 2 — runtime
+# Image légère sans Maven ni code source
+# ═══════════════════════════════════════════
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
 WORKDIR /app
 
-# Copier le jar genere
-COPY --from=build /app/target/authserver-*.jar app.jar
+# On récupère uniquement le JAR compilé depuis le builder
+COPY --from=builder /app/target/*.jar app.jar
 
-# Exposer le port 8080
+# curl est nécessaire pour le healthcheck Docker
+RUN apk add --no-cache curl
+
+# Spring Boot écoute sur le port 8080
 EXPOSE 8080
 
-# APP_MASTER_KEY doit etre injectee via -e lors du docker run
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# Variables d'environnement injectées par docker-compose
+# (APP_MASTER_KEY, JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD)
+ENV APP_ENV=production
+
+ENTRYPOINT ["java", "-jar", "app.jar"]

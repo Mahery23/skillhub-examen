@@ -16,8 +16,9 @@ storage/framework/views/*
 .git/
 .github/
 
-# Tests — pas nécessaires en production
-tests/
+# Tests — on les garde dans l'image pour pouvoir lancer `php artisan test`
+# depuis le container. Impact prod : negligeable (~5 Ko), Laravel ne les
+# charge que sur demande explicite.
 
 # Fichiers divers
 *.md

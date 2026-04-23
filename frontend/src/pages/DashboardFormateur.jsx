@@ -31,6 +31,152 @@ const normalizeFormation = (formation = {}) => ({
   vues: formation.vues ?? formation.nombre_de_vues ?? 0,
 })
 
+// Retourne le libellé du bouton d'enregistrement d'une formation
+// en fonction de l'état de sauvegarde et du mode (création vs modification).
+const getSaveButtonLabel = (isSaving, isEdit) => {
+  if (isSaving) return 'Enregistrement...'
+  if (isEdit) return 'Enregistrer'
+  return 'Créer'
+}
+
+// Retourne le libellé du bouton d'enregistrement d'un module
+// (création ou modification, avec état "en cours").
+const getModuleSaveButtonLabel = (isSaving, isEdit) => {
+  if (isSaving) return isEdit ? 'Modification...' : 'Création...'
+  return isEdit ? 'Enregistrer' : 'Ajouter'
+}
+
+// Vue vide affichée quand le formateur n'a pas encore de formation.
+function EmptyFormationsState({ onCreate }) {
+  return (
+    <div className="text-center py-5">
+      <p className="fs-5 fw-semibold" style={{ color: 'var(--brand-deep)' }}>
+        Vous n'avez pas encore de formation
+      </p>
+      <p className="small mt-2 mb-4" style={{ color: 'var(--text-secondary)' }}>
+        Créez votre première formation en cliquant sur le bouton ci-dessous.
+      </p>
+      <button className="sh-btn sh-btn--primary" onClick={onCreate}>
+        + Créer une formation
+      </button>
+    </div>
+  )
+}
+
+EmptyFormationsState.propTypes = {
+  onCreate: PropTypes.func.isRequired,
+}
+
+// Carte d'une formation : affiche titre/catégorie/niveau + actions (voir/modifier/modules/supprimer).
+function FormationCard({ formation, onEdit, onOpenModules, onDelete }) {
+  const niveauKey = normalizeNiveau(formation.niveau)
+
+  return (
+    <div className="col-md-4">
+      <div className="sh-formation-card">
+        <div className="sh-formation-card-top">
+          <span className="sh-cat-tag">{formation.categorie}</span>
+          <span className={`sh-badge ${niveauConfig[niveauKey]?.cls || 'sh-badge-green'}`}>
+            {niveauConfig[niveauKey]?.label || formation.niveau}
+          </span>
+        </div>
+        <h6 className="sh-formation-title">{formation.titre}</h6>
+        <p className="sh-formation-desc">{formation.description}</p>
+        <div className="sh-formation-meta">
+          <span><i className="bi bi-people-fill me-1" aria-hidden="true" />{formation.apprenants} apprenants</span>
+          <span><i className="bi bi-eye-fill me-1" aria-hidden="true" />{formation.vues} vues</span>
+        </div>
+        <div className="d-flex gap-2 mt-2">
+          <Link
+            to={`/formation/${formation.id}`}
+            className="sh-btn sh-btn--outline flex-fill"
+            style={{ fontSize: 12, padding: '7px 10px' }}
+          >
+            Voir
+          </Link>
+          <button
+            className="sh-btn sh-btn--outline flex-fill"
+            style={{ fontSize: 12, padding: '7px 10px' }}
+            onClick={() => onEdit(formation)}
+          >
+            Modifier
+          </button>
+          <button
+            className="sh-btn sh-btn--outline flex-fill"
+            style={{ fontSize: 12, padding: '7px 10px' }}
+            onClick={() => onOpenModules(formation)}
+          >
+            Modules
+          </button>
+          <button
+            className="sh-btn flex-fill"
+            style={{ fontSize: 12, padding: '7px 10px', background: 'var(--red-bg)', color: 'var(--red-text)', borderRadius: '999px' }}
+            onClick={() => onDelete(formation)}
+          >
+            Supprimer
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+FormationCard.propTypes = {
+  formation: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    titre: PropTypes.string,
+    niveau: PropTypes.string,
+    categorie: PropTypes.string,
+    description: PropTypes.string,
+    apprenants: PropTypes.number,
+    vues: PropTypes.number,
+  }).isRequired,
+  onEdit: PropTypes.func.isRequired,
+  onOpenModules: PropTypes.func.isRequired,
+  onDelete: PropTypes.func.isRequired,
+}
+
+// Sélectionne la vue appropriée en fonction de l'état :
+// chargement, erreur, liste vide, ou grille de formations.
+// Extrait du composant parent pour réduire sa complexité cognitive.
+function FormationsContent({ loading, error, formations, onCreate, onEdit, onOpenModules, onDelete }) {
+  if (loading) {
+    return <div className="text-center py-5">Chargement de vos formations...</div>
+  }
+
+  if (error) {
+    return <div className="alert alert-warning">{error}</div>
+  }
+
+  if (formations.length === 0) {
+    return <EmptyFormationsState onCreate={onCreate} />
+  }
+
+  return (
+    <div className="row g-4">
+      {formations.map((formation) => (
+        <FormationCard
+          key={formation.id}
+          formation={formation}
+          onEdit={onEdit}
+          onOpenModules={onOpenModules}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
+  )
+}
+
+FormationsContent.propTypes = {
+  loading: PropTypes.bool.isRequired,
+  error: PropTypes.string,
+  formations: PropTypes.array.isRequired,
+  onCreate: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
+  onOpenModules: PropTypes.func.isRequired,
+  onDelete: PropTypes.func.isRequired,
+}
+
 function DashboardFormateur({ user }) {
   const userRole = user?.role || ''
   const [formations, setFormations] = useState([])
@@ -270,92 +416,7 @@ function DashboardFormateur({ user }) {
     vues: formations.reduce((acc, formation) => acc + (formation.vues ?? 0), 0),
   }
 
-  let saveButtonLabel = 'Créer'
-
-  if (isSaving) {
-    saveButtonLabel = 'Enregistrement...'
-  } else if (formationEnCours) {
-    saveButtonLabel = 'Enregistrer'
-  }
-
-  let content
-
-  if (loading) {
-    content = <div className="text-center py-5">Chargement de vos formations...</div>
-  } else if (error) {
-    content = <div className="alert alert-warning">{error}</div>
-  } else if (formations.length === 0) {
-    content = (
-      <div className="text-center py-5">
-        <p className="fs-5 fw-semibold" style={{ color: 'var(--brand-deep)' }}>
-          Vous n'avez pas encore de formation
-        </p>
-        <p className="small mt-2 mb-4" style={{ color: 'var(--text-secondary)' }}>
-          Créez votre première formation en cliquant sur le bouton ci-dessous.
-        </p>
-        <button className="sh-btn sh-btn--primary" onClick={ouvrirCreation}>
-          + Créer une formation
-        </button>
-      </div>
-    )
-  } else {
-    content = (
-      <div className="row g-4">
-        {formations.map((formation) => {
-          const niveauKey = normalizeNiveau(formation.niveau)
-
-          return (
-            <div className="col-md-4" key={formation.id}>
-              <div className="sh-formation-card">
-                <div className="sh-formation-card-top">
-                  <span className="sh-cat-tag">{formation.categorie}</span>
-                  <span className={`sh-badge ${niveauConfig[niveauKey]?.cls || 'sh-badge-green'}`}>
-                    {niveauConfig[niveauKey]?.label || formation.niveau}
-                  </span>
-                </div>
-                <h6 className="sh-formation-title">{formation.titre}</h6>
-                <p className="sh-formation-desc">{formation.description}</p>
-                <div className="sh-formation-meta">
-                  <span><i className="bi bi-people-fill me-1" aria-hidden="true" />{formation.apprenants} apprenants</span>
-                  <span><i className="bi bi-eye-fill me-1" aria-hidden="true" />{formation.vues} vues</span>
-                </div>
-                <div className="d-flex gap-2 mt-2">
-                  <Link
-                    to={`/formation/${formation.id}`}
-                    className="sh-btn sh-btn--outline flex-fill"
-                    style={{ fontSize: 12, padding: '7px 10px' }}
-                  >
-                    Voir
-                  </Link>
-                  <button
-                    className="sh-btn sh-btn--outline flex-fill"
-                    style={{ fontSize: 12, padding: '7px 10px' }}
-                    onClick={() => ouvrirModification(formation)}
-                  >
-                    Modifier
-                  </button>
-                  <button
-                    className="sh-btn sh-btn--outline flex-fill"
-                    style={{ fontSize: 12, padding: '7px 10px' }}
-                    onClick={() => ouvrirAjoutModule(formation)}
-                  >
-                    Modules
-                  </button>
-                  <button
-                    className="sh-btn flex-fill"
-                    style={{ fontSize: 12, padding: '7px 10px', background: 'var(--red-bg)', color: 'var(--red-text)', borderRadius: '999px' }}
-                    onClick={() => demanderSuppression(formation)}
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
+  const saveButtonLabel = getSaveButtonLabel(isSaving, Boolean(formationEnCours))
 
   return (
     <div>
@@ -402,7 +463,15 @@ function DashboardFormateur({ user }) {
           </div>
 
           {actionError && <div className="alert alert-danger">{actionError}</div>}
-          {content}
+          <FormationsContent
+            loading={loading}
+            error={error}
+            formations={formations}
+            onCreate={ouvrirCreation}
+            onEdit={ouvrirModification}
+            onOpenModules={ouvrirAjoutModule}
+            onDelete={demanderSuppression}
+          />
         </div>
       </section>
 
@@ -525,7 +594,7 @@ function DashboardFormateur({ user }) {
                     Modules existants ({modules.length})
                   </h6>
                   <div className="d-flex flex-column gap-2">
-                    {modules
+                    {[...modules]
                       .sort((a, b) => a.ordre - b.ordre)
                       .map((module) => (
                         <div
@@ -588,17 +657,16 @@ function DashboardFormateur({ user }) {
                     <Form.Select
                       id="module-ordre"
                       value={moduleEnCours?.ordre || ''}
-                      onChange={(e) => setModuleEnCours({ ...moduleEnCours, ordre: parseInt(e.target.value) })}
+                      onChange={(e) => setModuleEnCours({ ...moduleEnCours, ordre: Number.parseInt(e.target.value, 10) })}
                     >
                       <option value="">Sélectionner une position</option>
-                      {Array.from({ length: (modules?.length ?? 0) + 1 }, (_, i) => i + 1).map((ordre) => {
-                        const isOrdreUsed = modules?.some(m => m.ordre === ordre && m.id !== moduleEnCours?.id)
-                        return !isOrdreUsed ? (
+                      {Array.from({ length: (modules?.length ?? 0) + 1 }, (_, i) => i + 1)
+                        .filter((ordre) => !modules?.some(m => m.ordre === ordre && m.id !== moduleEnCours?.id))
+                        .map((ordre) => (
                           <option key={ordre} value={ordre}>
                             Position {ordre}
                           </option>
-                        ) : null
-                      })}
+                        ))}
                     </Form.Select>
                   </Form.Group>
 
@@ -654,7 +722,7 @@ function DashboardFormateur({ user }) {
               !moduleEnCours?.ordre
             }
           >
-            {isSaving ? (moduleEnCours?.id ? 'Modification...' : 'Création...') : (moduleEnCours?.id ? 'Enregistrer' : 'Ajouter')}
+            {getModuleSaveButtonLabel(isSaving, Boolean(moduleEnCours?.id))}
           </Button>
         </Modal.Footer>
       </Modal>

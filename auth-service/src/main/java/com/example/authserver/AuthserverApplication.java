@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Point d'entrée du serveur d'authentification forte (TP3).
+ * Point d'entrée du serveur d'authentification forte.
  *
  * <h2>Protocole d'authentification implémenté</h2>
  * <p>Ce serveur implémente un protocole SSO en un seul échange réseau basé sur HMAC-SHA256.

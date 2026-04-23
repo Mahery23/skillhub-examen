@@ -6,40 +6,40 @@ use App\Http\Controllers\Api\FormationController;
 use App\Http\Controllers\Api\ModuleController;
 use Illuminate\Support\Facades\Route;
 
-// Route de vérification — utilisée par le healthcheck Docker
-Route::get('/health', function () {
-    return response()->json(['status' => 'ok']);
-});
+// Health check Docker
+Route::get('/health', fn() => response()->json(['status' => 'ok']));
 
-// Endpoints publics d'authentification
+// Étape 1 du login HMAC : récupérer le nonce
+Route::get('/challenge', [AuthController::class, 'challenge']);
+
+// Authentification via auth-service Spring Boot
 Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login',    [AuthController::class, 'login']);
 
-// Catalogue des formations (public)
-Route::get('/formations', [FormationController::class, 'index']);
-Route::get('/formations/{formation}', [FormationController::class, 'show']);
-Route::get('/formations/{formation}/modules', [ModuleController::class, 'index']);
+// Catalogue public
+Route::get('/formations',                        [FormationController::class, 'index']);
+Route::get('/formations/{formation}',            [FormationController::class, 'show']);
+Route::get('/formations/{formation}/modules',    [ModuleController::class, 'index']);
 
-// Routes protégées par JWT
-Route::middleware('auth:api')->group(function () {
-    Route::get('/profile', [AuthController::class, 'profile']);
-    Route::post('/logout', [AuthController::class, 'logout']);
+// Routes protégées par JWT Spring Boot
+Route::middleware('spring.auth')->group(function () {
+    Route::get('/profile',  [AuthController::class, 'profile']);
+    Route::post('/logout',  [AuthController::class, 'logout']);
 });
 
-// Routes formateur uniquement
-Route::middleware(['auth:api', 'check.role:formateur'])->group(function () {
-    Route::post('/formations', [FormationController::class, 'store']);
-    Route::put('/formations/{formation}', [FormationController::class, 'update']);
-    Route::delete('/formations/{formation}', [FormationController::class, 'destroy']);
-
-    Route::post('/formations/{formation}/modules', [ModuleController::class, 'store']);
-    Route::put('/modules/{module}', [ModuleController::class, 'update']);
-    Route::delete('/modules/{module}', [ModuleController::class, 'destroy']);
+// Formateur uniquement
+Route::middleware(['spring.auth:formateur'])->group(function () {
+    Route::post('/formations',                        [FormationController::class, 'store']);
+    Route::put('/formations/{formation}',             [FormationController::class, 'update']);
+    Route::delete('/formations/{formation}',          [FormationController::class, 'destroy']);
+    Route::post('/formations/{formation}/modules',    [ModuleController::class, 'store']);
+    Route::put('/modules/{module}',                   [ModuleController::class, 'update']);
+    Route::delete('/modules/{module}',                [ModuleController::class, 'destroy']);
 });
 
-// Routes apprenant uniquement
-Route::middleware(['auth:api', 'check.role:apprenant'])->group(function () {
-    Route::post('/formations/{formation}/inscription', [EnrollmentController::class, 'store']);
+// Apprenant uniquement
+Route::middleware(['spring.auth:apprenant'])->group(function () {
+    Route::post('/formations/{formation}/inscription',   [EnrollmentController::class, 'store']);
     Route::delete('/formations/{formation}/inscription', [EnrollmentController::class, 'destroy']);
-    Route::get('/apprenant/formations', [EnrollmentController::class, 'mesFormations']);
+    Route::get('/apprenant/formations',                  [EnrollmentController::class, 'mesFormations']);
 });

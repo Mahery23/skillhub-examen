@@ -10,17 +10,6 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
-/**
- * Service de génération et validation des JWT access tokens.
- *
- * <h2>Format du token</h2>
- * <ul>
- *   <li>Algorithm : HS256</li>
- *   <li>Claim {@code sub} : email de l'utilisateur</li>
- *   <li>Claim {@code iat} : date d'émission</li>
- *   <li>Claim {@code exp} : date d'expiration (iat + 15 minutes)</li>
- * </ul>
- */
 @Service
 public class JwtService {
 
@@ -35,15 +24,14 @@ public class JwtService {
     }
 
     /**
-     * Génère un JWT access token pour un utilisateur.
-     *
-     * @param email l'email de l'utilisateur (subject du token)
-     * @return le JWT signé
+     * Génère un JWT avec email, rôle et nom.
      */
-    public String generateToken(String email) {
+    public String generateToken(String email, String role, String name) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(email)
+                .claim("role", role)
+                .claim("name", name)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + expirationMs))
                 .signWith(key)
@@ -51,35 +39,42 @@ public class JwtService {
     }
 
     /**
-     * Extrait l'email (subject) d'un token JWT valide.
-     *
-     * @param token le JWT
-     * @return l'email extrait
-     * @throws io.jsonwebtoken.JwtException si le token est invalide ou expiré
+     * Garde la compatibilité avec l'ancienne signature (sans rôle/nom).
      */
-    public String extractEmail(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-        return claims.getSubject();
+    public String generateToken(String email) {
+        return generateToken(email, "", "");
     }
 
     /**
-     * Calcule le timestamp epoch (en secondes) d'expiration d'un token.
-     *
-     * @return epoch secondes de l'expiration
+     * Extrait l'email (subject) d'un token JWT valide.
+     */
+    public String extractEmail(String token) {
+        return getClaims(token).getSubject();
+    }
+
+    /**
+     * Extrait le rôle du token JWT.
+     */
+    public String extractRole(String token) {
+        return getClaims(token).get("role", String.class);
+    }
+
+    /**
+     * Extrait le nom du token JWT.
+     */
+    public String extractName(String token) {
+        return getClaims(token).get("name", String.class);
+    }
+
+    /**
+     * Calcule le timestamp d'expiration en secondes.
      */
     public long computeExpiresAt() {
         return (System.currentTimeMillis() + expirationMs) / 1000L;
     }
 
     /**
-     * Vérifie si un token JWT est valide (signature + expiration).
-     *
-     * @param token le JWT à valider
-     * @return {@code true} si le token est valide
+     * Vérifie si un token JWT est valide.
      */
     public boolean isTokenValid(String token) {
         try {
@@ -88,5 +83,16 @@ public class JwtService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Parse et retourne les claims du token.
+     */
+    private Claims getClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(key)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

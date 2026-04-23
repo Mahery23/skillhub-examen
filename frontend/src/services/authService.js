@@ -3,22 +3,80 @@ import { apiRequest } from './apiClient'
 const TOKEN_KEY = 'skillhub_token'
 const USER_KEY = 'skillhub_user'
 
+// Allowlist des roles. Toute valeur hors liste tombe sur 'apprenant'.
+// Sans ca, une API compromise pourrait stocker role='admin' cote client.
+const ALLOWED_ROLES = ['admin', 'formateur', 'apprenant']
+
+// Limite defensive : evite qu'une API compromise sature le localStorage.
+const MAX_FIELD_LENGTH = 255
+
+// Un JWT est strictement 3 segments base64url separes par '.'.
+const JWT_REGEX = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
+
+const sanitizeString = (value, maxLength = MAX_FIELD_LENGTH) => {
+  if (typeof value !== 'string') return ''
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLength)
+}
+
+const sanitizeRole = (value) => {
+  const role = typeof value === 'string' ? value.toLowerCase() : ''
+  return ALLOWED_ROLES.includes(role) ? role : 'apprenant'
+}
+
+const sanitizeToken = (value) => {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return JWT_REGEX.test(trimmed) ? trimmed : null
+}
+
+const sanitizeId = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(value)) return value
+  return null
+}
+
 const normalizeUser = (rawUser = {}, fallback = {}) => ({
-  id: rawUser.id || fallback.id || null,
-  prenom: rawUser.prenom || fallback.prenom || '',
-  nom: rawUser.nom || fallback.nom || '',
-  contact: rawUser.contact || fallback.contact || '',
-  name: rawUser.name || [rawUser.prenom, rawUser.nom].filter(Boolean).join(' ') || fallback.name || 'Utilisateur',
-  email: rawUser.email || fallback.email || '',
-  role: rawUser.role || rawUser.role_name || fallback.role || 'apprenant',
+  id: sanitizeId(rawUser.id ?? fallback.id),
+  prenom: sanitizeString(rawUser.prenom || fallback.prenom),
+  nom: sanitizeString(rawUser.nom || fallback.nom),
+  contact: sanitizeString(rawUser.contact || fallback.contact),
+  name: sanitizeString(
+    rawUser.name
+      || [rawUser.prenom, rawUser.nom].filter(Boolean).join(' ')
+      || fallback.name
+      || 'Utilisateur'
+  ),
+  email: sanitizeString(rawUser.email || fallback.email),
+  role: sanitizeRole(rawUser.role || rawUser.role_name || fallback.role),
+})
+
+// Construit un payload dont TOUS les champs ressortent a nouveau des
+// sanitizers juste avant l ecriture. Meme si `user` vient deja de
+// normalizeUser, on re-sanitize a la frontiere du sink localStorage pour
+// que l analyse taint de SonarCloud voit un chemin sanitize explicite
+// (regle jssecurity:S8475 "Browser storage should not be poisoned").
+const buildSafeUserPayload = (user = {}) => ({
+  id: sanitizeId(user.id),
+  prenom: sanitizeString(user.prenom),
+  nom: sanitizeString(user.nom),
+  contact: sanitizeString(user.contact),
+  name: sanitizeString(user.name),
+  email: sanitizeString(user.email),
+  role: sanitizeRole(user.role),
 })
 
 const saveSession = ({ token, user }) => {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token)
+  // Validation AVANT ecriture dans browser storage (Sonar jssecurity:S8475).
+  const safeToken = sanitizeToken(token)
+  if (safeToken) {
+    localStorage.setItem(TOKEN_KEY, safeToken)
   }
 
-  localStorage.setItem(USER_KEY, JSON.stringify(user))
+  // Re-sanitize juste avant l ecriture pour que l analyse statique
+  // reconnaisse le chemin tainted -> sanitize -> sink.
+  const safeUserPayload = buildSafeUserPayload(user)
+  localStorage.setItem(USER_KEY, JSON.stringify(safeUserPayload))
 }
 
 const clearSession = () => {

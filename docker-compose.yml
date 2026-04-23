@@ -1,0 +1,195 @@
+services:
+
+  # ─────────────────────────────────────────
+  # MySQL — base de données partagée
+  # Héberge 2 bases : skillhub_db (Laravel) et authdb (Spring Boot)
+  # ─────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+    networks:
+      - skillhub_net
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+
+
+  # ─────────────────────────────────────────
+  # MongoDB — logs et historisation
+  # ─────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    restart: unless-stopped
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+
+    volumes:
+      - mongo_data:/data/db
+
+    networks:
+      - skillhub_net
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+
+
+  # ─────────────────────────────────────────
+  # Auth Service — microservice Spring Boot
+  # Gère l'authentification forte HMAC + JWT
+  # ─────────────────────────────────────────
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    environment:
+      # Base de données dédiée au auth-service
+      DB_URL: ${AUTH_DB_URL}
+      DB_USERNAME: ${AUTH_DB_USERNAME}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      # Clé AES-GCM pour chiffrer les mots de passe
+      APP_MASTER_KEY: ${APP_MASTER_KEY}
+      # JWT — même secret que Laravel
+      JWT_SECRET: ${APP_JWT_SECRET}
+
+    ports:
+      - "8080:8080"
+
+    networks:
+      - skillhub_net
+
+    # Démarre uniquement si MySQL est prêt
+    depends_on:
+      db:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+
+
+  # ─────────────────────────────────────────
+  # Backend Laravel
+  # Délègue l'auth au auth-service Spring Boot
+  # ─────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    env_file: .env
+
+    ports:
+      - "8000:8000"
+
+    networks:
+      - skillhub_net
+
+    # Laravel démarre après MySQL, MongoDB ET auth-service
+    depends_on:
+      db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+
+
+  # ─────────────────────────────────────────
+  # Frontend React
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+
+    restart: unless-stopped
+
+    ports:
+      - "5173:80"
+
+    networks:
+      - skillhub_net
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+
+
+# ─────────────────────────────────────────
+# Volumes — persistance des données
+# ─────────────────────────────────────────
+volumes:
+  mysql_data:
+  mongo_data:
+
+
+# ─────────────────────────────────────────
+# Réseau interne isolé
+# Les services se parlent par leur nom (ex: "auth-service", "db")
+# ─────────────────────────────────────────
+networks:
+  skillhub_net:
+    driver: bridge

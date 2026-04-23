@@ -3,158 +3,159 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 
 /**
- * Gère l'authentification API SkillHub en JWT.
- *
- * Ce contrôleur centralise l'inscription, la connexion,
- * la récupération du profil connecté et la déconnexion.
+ * Gère l'authentification via le microservice Spring Boot (auth-service).
+ * Laravel ne gère plus les mots de passe — il délègue au auth-service.
  */
 class AuthController extends Controller
 {
+    /** URL de base du auth-service Spring Boot */
+    private string $authServiceUrl;
+
+    public function __construct()
+    {
+        $this->authServiceUrl = env('AUTH_SERVICE_URL', 'http://auth-service:8080');
+    }
+
     /**
-     * Crée un utilisateur SkillHub puis retourne un token JWT.
-     *
-     * @param  Request  $request  Données d'inscription attendues: prenom, nom, contact, email, password, role.
+     * Inscription : transfère la demande au auth-service.
+     * POST /api/register
+     * Body: { prenom, nom, contact, email, password, role }
      */
     public function register(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'prenom' => ['required', 'string', 'max:100'],
-            'nom' => ['required', 'string', 'max:100'],
-            'contact' => ['required', 'string', 'max:30', 'regex:/^\+?[0-9\s\-().]{8,20}$/'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+        $request->validate([
+            'prenom'   => ['required', 'string', 'max:100'],
+            'nom'      => ['required', 'string', 'max:100'],
+            'contact'  => ['required', 'string', 'max:30'],
+            'email'    => ['required', 'email'],
             'password' => ['required', 'string', 'min:8'],
-            'role' => ['required', 'in:apprenant,formateur'],
+            'role'     => ['required', 'in:apprenant,formateur'],
         ]);
 
-        if ($validator->fails()) {
+        // Appel au auth-service Spring Boot
+        $response = $this->callAuthService('POST', '/api/auth/register', [
+            'email'    => $request->email,
+            'password' => $request->password,
+            'name'     => trim($request->prenom . ' ' . $request->nom),
+            'role'     => $request->role,
+        ]);
+
+        if ($response['status'] !== 200) {
             return response()->json([
-                'message' => 'Validation error',
-                'errors' => $validator->errors(),
-            ], 422);
+                'message' => $response['body']['message'] ?? 'Erreur lors de l\'inscription.',
+            ], $response['status']);
         }
 
-        $user = User::create([
-            'prenom' => $request->string('prenom')->toString(),
-            'nom' => $request->string('nom')->toString(),
-            'contact' => $request->string('contact')->toString(),
-            'email' => $request->string('email')->toString(),
-            'mot_de_passe' => $request->string('password')->toString(),
-            'role' => $request->string('role')->toString(),
-        ]);
-
-        $token = JWTAuth::fromUser($user);
-
         app(ActivityLogService::class)->log('user.registered', [
-            'user_id' => $user->id,
-            'role' => $user->role,
-            'email' => $user->email,
+            'email' => $request->email,
+            'role'  => $request->role,
         ]);
 
         return response()->json([
-            'message' => 'User registered successfully',
-            'token' => $token,
-            'user' => $this->formatUser($user),
+            'message' => 'Inscription réussie. Vous pouvez maintenant vous connecter.',
         ], 201);
     }
 
     /**
-     * Authentifie un utilisateur et retourne son token JWT.
-     *
-     * @param  Request  $request  Identifiants attendus: email et password.
+     * Étape 1 du login HMAC : récupère le nonce depuis le auth-service.
+     * GET /api/challenge?email=...
+     */
+    public function challenge(Request $request): JsonResponse
+    {
+        $request->validate(['email' => ['required', 'email']]);
+
+        $response = $this->callAuthService('GET', '/api/auth/challenge?email=' . urlencode($request->email));
+
+        return response()->json($response['body'], $response['status']);
+    }
+
+    /**
+     * Étape 2 du login HMAC : envoie la preuve HMAC au auth-service et retourne le JWT.
+     * POST /api/login
+     * Body: { email, nonce, timestamp, hmac }
      */
     public function login(Request $request): JsonResponse
     {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
+        $request->validate([
+            'email'     => ['required', 'email'],
+            'nonce'     => ['required', 'string'],
+            'timestamp' => ['required', 'integer'],
+            'hmac'      => ['required', 'string'],
         ]);
 
-        if (! $token = auth('api')->attempt($credentials)) {
-            return response()->json([
-                'message' => 'Invalid credentials',
-            ], 401);
+        $response = $this->callAuthService('POST', '/api/auth/login', $request->only([
+            'email', 'nonce', 'timestamp', 'hmac',
+        ]));
+
+        if ($response['status'] !== 200) {
+            return response()->json(['message' => 'Identifiants invalides.'], 401);
         }
 
-        /** @var User $user */
-        $user = auth('api')->user();
-
         app(ActivityLogService::class)->log('user.logged_in', [
-            'user_id' => $user->id,
-            'role' => $user->role,
-            'email' => $user->email,
+            'email' => $request->email,
         ]);
 
-        return response()->json([
-            'message' => 'Login successful',
-            'token' => $token,
-            'user' => $this->formatUser($user),
-        ]);
+        // On retourne directement le JWT émis par Spring Boot
+        return response()->json($response['body']);
     }
 
     /**
-     * Retourne le profil de l'utilisateur authentifié via JWT.
+     * Retourne le profil de l'utilisateur à partir du JWT Spring Boot.
+     * GET /api/profile — protégé par le middleware spring.auth
      */
-    public function profile(): JsonResponse
+    public function profile(Request $request): JsonResponse
     {
-        $user = auth('api')->user();
-
         return response()->json([
-            'user' => $this->formatUser($user),
+            'user' => [
+                'email' => $request->attributes->get('auth_email'),
+                'role'  => $request->attributes->get('auth_role'),
+                'name'  => $request->attributes->get('auth_name'),
+            ],
         ]);
     }
 
     /**
-     * Invalide le token JWT courant.
+     * Logout côté client — le JWT Spring Boot est stateless, pas de blacklist.
+     * Le frontend doit supprimer le token de son côté.
      */
     public function logout(): JsonResponse
     {
-        $user = auth('api')->user();
-
-        if ($user) {
-            app(ActivityLogService::class)->log('user.logged_out', [
-                'user_id' => $user->id,
-                'role' => $user->role,
-                'email' => $user->email,
-            ]);
-        }
-
-        auth('api')->logout();
-
-        return response()->json([
-            'message' => 'Logout successful',
-        ]);
+        return response()->json(['message' => 'Déconnexion réussie.']);
     }
 
     /**
-     * Normalise le modèle User vers le format JSON attendu par le frontend.
+     * Appelle le auth-service Spring Boot via HTTP.
      *
-     * @param  User|null  $user  Utilisateur à convertir.
-     * @return array<string, mixed>
+     * @return array{status: int, body: array}
      */
-    private function formatUser(?User $user): array
+    private function callAuthService(string $method, string $path, array $body = []): array
     {
-        if (! $user) {
-            return [];
+        $url = $this->authServiceUrl . $path;
+
+        $opts = [
+            'http' => [
+                'method'  => $method,
+                'header'  => "Content-Type: application/json\r\nAccept: application/json\r\n",
+                'content' => $method === 'GET' ? null : json_encode($body),
+                'ignore_errors' => true, // pour récupérer les réponses 4xx/5xx
+            ],
+        ];
+
+        $result   = file_get_contents($url, false, stream_context_create($opts));
+        $decoded  = json_decode($result ?: '{}', true);
+
+        // Récupérer le code HTTP depuis les headers de réponse
+        $httpCode = 200;
+        if (isset($http_response_header)) {
+            preg_match('/HTTP\/\d\.\d (\d+)/', $http_response_header[0], $matches);
+            $httpCode = (int) ($matches[1] ?? 200);
         }
 
-        return [
-            'id' => $user->id,
-            'name' => trim(($user->prenom ?? '') . ' ' . ($user->nom ?? '')) ?: $user->nom,
-            'prenom' => $user->prenom,
-            'nom' => $user->nom,
-            'contact' => $user->contact,
-            'email' => $user->email,
-            'role' => $user->role,
-            'date_creation' => $user->date_creation,
-        ];
+        return ['status' => $httpCode, 'body' => $decoded];
     }
 }
-
