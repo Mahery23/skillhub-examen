@@ -15,11 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->api(remove: [
+            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+        ]);
+
         $middleware->alias([
-            // Ancien middleware de rôle (conservé pour compatibilité)
-            'check.role'   => CheckRole::class,
-            // Nouveau middleware : valide le JWT émis par Spring Boot
-            'spring.auth'  => VerifySpringJWT::class,
+            'check.role'  => CheckRole::class,
+            'spring.auth' => VerifySpringJWT::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

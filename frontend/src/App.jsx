@@ -123,11 +123,9 @@ function AppContent() {
     }
 
     const handleRegister = async (payload) => {
-        const session = await registerUser(payload)
-        setUser(session.user)
-        markActivity()
+        await registerUser(payload)
         setShowRegister(false)
-        redirectAfterAuth(session.user)
+        setShowLogin(true)
     }
 
     const handleLogout = () => {

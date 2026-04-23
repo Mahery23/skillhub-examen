@@ -3,19 +3,12 @@ import { apiRequest } from './apiClient'
 const TOKEN_KEY = 'skillhub_token'
 const USER_KEY = 'skillhub_user'
 
-// Allowlist des roles. Toute valeur hors liste tombe sur 'apprenant'.
-// Sans ca, une API compromise pourrait stocker role='admin' cote client.
 const ALLOWED_ROLES = ['admin', 'formateur', 'apprenant']
-
-// Limite defensive : evite qu'une API compromise sature le localStorage.
 const MAX_FIELD_LENGTH = 255
-
-// Un JWT est strictement 3 segments base64url separes par '.'.
 const JWT_REGEX = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/
 
 const sanitizeString = (value, maxLength = MAX_FIELD_LENGTH) => {
   if (typeof value !== 'string') return ''
-  // eslint-disable-next-line no-control-regex
   return value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLength)
 }
 
@@ -51,11 +44,6 @@ const normalizeUser = (rawUser = {}, fallback = {}) => ({
   role: sanitizeRole(rawUser.role || rawUser.role_name || fallback.role),
 })
 
-// Construit un payload dont TOUS les champs ressortent a nouveau des
-// sanitizers juste avant l ecriture. Meme si `user` vient deja de
-// normalizeUser, on re-sanitize a la frontiere du sink localStorage pour
-// que l analyse taint de SonarCloud voit un chemin sanitize explicite
-// (regle jssecurity:S8475 "Browser storage should not be poisoned").
 const buildSafeUserPayload = (user = {}) => ({
   id: sanitizeId(user.id),
   prenom: sanitizeString(user.prenom),
@@ -67,14 +55,10 @@ const buildSafeUserPayload = (user = {}) => ({
 })
 
 const saveSession = ({ token, user }) => {
-  // Validation AVANT ecriture dans browser storage (Sonar jssecurity:S8475).
   const safeToken = sanitizeToken(token)
   if (safeToken) {
     localStorage.setItem(TOKEN_KEY, safeToken)
   }
-
-  // Re-sanitize juste avant l ecriture pour que l analyse statique
-  // reconnaisse le chemin tainted -> sanitize -> sink.
   const safeUserPayload = buildSafeUserPayload(user)
   localStorage.setItem(USER_KEY, JSON.stringify(safeUserPayload))
 }
@@ -84,33 +68,94 @@ const clearSession = () => {
   localStorage.removeItem(USER_KEY)
 }
 
+/**
+ * Calcule le HMAC-SHA256 du message avec le mot de passe comme clé.
+ * Utilise l'API Web Crypto native du navigateur.
+ */
+const computeHmac = async (password, message) => {
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(password)
+  const messageData = encoder.encode(message)
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+
+  // Convertir en hex (même format que HmacService.java)
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * Login HMAC en 2 étapes :
+ * 1. GET /api/challenge → nonce
+ * 2. Calcul HMAC + POST /api/login → JWT
+ */
 const loginWithApi = async ({ email, password }) => {
+  // Étape 1 : récupérer le nonce
+  const challengePayload = await apiRequest(`/api/challenge?email=${encodeURIComponent(email)}`)
+  const nonce = challengePayload?.nonce
+  if (!nonce) {
+    throw new Error('Impossible de récupérer le challenge.')
+  }
+
+  // Étape 2 : calculer le HMAC
+  const timestamp = Math.floor(Date.now() / 1000)
+  const message = `${email}:${nonce}:${timestamp}`
+  const hmac = await computeHmac(password, message)
+
+  // Étape 3 : envoyer la preuve HMAC
   const payload = await apiRequest('/api/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, nonce, timestamp, hmac }),
   })
 
-  const token = payload?.token || payload?.access_token
-  const user = normalizeUser(payload?.user, { email })
-
+  // Spring Boot retourne { accessToken, expiresAt }
+  const token = payload?.accessToken || payload?.token || payload?.access_token
   if (!token) {
     throw new Error('Token JWT manquant dans la reponse login.')
   }
 
+  // Décoder le JWT pour récupérer name et role (pas besoin de vérifier la signature côté client)
+  let userFromJwt = {}
+  try {
+    const base64Payload = token.split('.')[1]
+    const decoded = JSON.parse(atob(base64Payload))
+    userFromJwt = {
+      email: decoded.sub,
+      role: decoded.role,
+      name: decoded.name,
+    }
+  } catch {
+    userFromJwt = { email }
+  }
+
+  const user = normalizeUser(userFromJwt, { email })
   const session = { token, user, mode: 'api' }
   saveSession(session)
 
   return session
 }
 
+/**
+ * Inscription : envoie les infos au Laravel qui les transmet au auth-service.
+ * Pas de token retourné — l'utilisateur doit se connecter après.
+ */
 const registerWithApi = async ({ prenom, nom, contact, email, password, role }) => {
-  const payload = await apiRequest('/api/register', {
+  await apiRequest('/api/register', {
     method: 'POST',
     body: JSON.stringify({ prenom, nom, contact, email, password, role }),
   })
 
-  const token = payload?.token || payload?.access_token
-  const user = normalizeUser(payload?.user, {
+  // Pas de token après register — retourner un objet minimal
+  const user = normalizeUser({
     prenom,
     nom,
     contact,
@@ -119,23 +164,12 @@ const registerWithApi = async ({ prenom, nom, contact, email, password, role }) 
     role,
   })
 
-  if (!token) {
-    throw new Error('Token JWT manquant dans la reponse register.')
-  }
-
-  const session = { token, user, mode: 'api' }
-  saveSession(session)
-
-  return session
+  return { user, mode: 'api' }
 }
 
 export const getStoredUser = () => {
   const rawUser = localStorage.getItem(USER_KEY)
-
-  if (!rawUser) {
-    return null
-  }
-
+  if (!rawUser) return null
   try {
     return normalizeUser(JSON.parse(rawUser))
   } catch {
@@ -148,10 +182,7 @@ export const getStoredToken = () => localStorage.getItem(TOKEN_KEY)
 
 export const getProfile = async () => {
   const token = getStoredToken()
-
-  if (!token) {
-    return null
-  }
+  if (!token) return null
 
   const payload = await apiRequest('/api/profile', {
     headers: { Authorization: `Bearer ${token}` },
@@ -159,7 +190,6 @@ export const getProfile = async () => {
 
   const user = normalizeUser(payload?.user || payload)
   saveSession({ token, user })
-
   return user
 }
 
@@ -170,6 +200,3 @@ export const register = async (payload) => registerWithApi(payload)
 export const logout = () => {
   clearSession()
 }
-
-
-
