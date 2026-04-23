@@ -1,0 +1,16 @@
+# Laravel
+backend/vendor/
+backend/.env
+backend/node_modules/
+
+# React
+frontend/node_modules/
+frontend/.env
+
+# Spring Boot
+auth-service/target/
+auth-service/.env
+
+# Divers
+.DS_Store
+*.log
