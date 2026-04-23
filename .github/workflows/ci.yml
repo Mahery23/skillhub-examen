@@ -31,7 +31,7 @@ jobs:
       - name: Build et tests avec couverture JaCoCo
         working-directory: auth-service
         env:
-          APP_MASTER_KEY: ${{ secrets.APP_MASTER_KEY }}
+          APP_MASTER_KEY: test_master_key_for_ci_only_32chars
         run: mvn verify -B
 
       - name: Analyse SonarCloud — Auth Service
