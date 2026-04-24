@@ -39,7 +39,7 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_FOREIGN_KEYS" value="true"/>
         <env name="DB_URL" value=""/>
-        <env name="JWT_SECRET" value="testing_jwt_secret_do_not_use_in_production_phpunit_2026"/>
+        <env name="JWT_SECRET" value="dGVzdGluZ19qd3Rfc2VjcmV0X2Zvcl9waHB1bml0X3Rlc3RpbmdfMjAyNl9taW5pbXVtXzY0X2NoYXJhY3RlcnNfcmVxdWlyZWQ="/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

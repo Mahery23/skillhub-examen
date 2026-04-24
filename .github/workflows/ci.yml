@@ -86,6 +86,7 @@ jobs:
         env:
           MONGODB_URI: "mongodb://localhost:27017/test"
           AUTH_SERVICE_URL: "http://localhost:8080"
+          JWT_SECRET: "dGVzdGluZ19qd3Rfc2VjcmV0X2Zvcl9waHB1bml0X3Rlc3RpbmdfMjAyNl9taW5pbXVtXzY0X2NoYXJhY3RlcnNfcmVxdWlyZWQ="
         run: php artisan test --configuration=phpunit.xml
 
       # ── Node.js ──
