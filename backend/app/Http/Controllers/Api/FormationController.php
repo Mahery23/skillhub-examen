@@ -11,9 +11,7 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Gère les endpoints API des formations SkillHub.
- *
- * Cette couche expose le catalogue public et les opérations protégées
- * réservées aux formateurs propriétaires.
+ * Utilise le JWT Spring Boot via $request->attributes (middleware spring.auth).
  */
 class FormationController extends Controller
 {
@@ -40,9 +38,9 @@ class FormationController extends Controller
     {
         $query = Formation::query()->with('formateur:id,nom')->withCount('inscriptions');
 
-        $search = trim((string) $request->input('search', ''));
+        $search    = trim((string) $request->input('search', ''));
         $categorie = trim((string) $request->input('categorie', ''));
-        $niveau = trim((string) $request->input('niveau', ''));
+        $niveau    = trim((string) $request->input('niveau', ''));
 
         if ($search !== '') {
             $query->where(function ($subQuery) use ($search): void {
@@ -83,61 +81,34 @@ class FormationController extends Controller
     }
 
     /**
-     * Détermine si la consultation doit incrémenter le compteur de vues.
-     *
-     * Le formateur propriétaire ne doit pas augmenter ses propres statistiques.
-     */
-    private function shouldIncrementViews(Formation $formation, Request $request): bool
-    {
-        $user = auth('api')->user();
-
-        if ($user && (int) $user->id === (int) $formation->formateur_id) {
-            return false;
-        }
-
-        // Hash SHA-256 (et non SHA-1) pour l'identifiant de cache d'un visiteur
-        // anonyme : meme s'il ne s'agit pas d'un contexte cryptographique sensible,
-        // on evite les algorithmes faibles signales par SonarCloud (php:S4790).
-        $viewerKey = $user
-            ? 'user:' . $user->id
-            : 'guest:' . hash('sha256', ($request->ip() ?? 'unknown') . '|' . ($request->userAgent() ?? 'unknown'));
-
-        $cacheKey = sprintf('formation:%d:view:%s', $formation->id, $viewerKey);
-
-        // Incrémente au plus une fois par visiteur sur la fenêtre de cooldown.
-        return Cache::add($cacheKey, true, now()->addMinutes(self::VIEW_COOLDOWN_MINUTES));
-    }
-
-    /**
      * Crée une formation pour le formateur connecté.
      */
     public function store(Request $request): JsonResponse
     {
-        $this->ensureTrainer();
+        $this->ensureTrainer($request);
 
         $validated = $request->validate([
-            'titre' => ['required', 'string', 'max:255'],
+            'titre'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
-            'categorie' => ['required', 'in:' . implode(',', self::CATEGORIES)],
-            'niveau' => ['required', 'in:' . implode(',', self::NIVEAUX)],
+            'categorie'   => ['required', 'in:' . implode(',', self::CATEGORIES)],
+            'niveau'      => ['required', 'in:' . implode(',', self::NIVEAUX)],
         ]);
 
         $formation = Formation::create([
             ...$validated,
-            'formateur_id' => auth('api')->id(),
+            // On utilise l'email comme identifiant formateur (SSO Spring Boot)
+            'formateur_id' => $request->attributes->get('auth_email'),
             'nombre_de_vues' => 0,
         ]);
 
         app(ActivityLogService::class)->log('formation.created', [
-            'user_id' => auth('api')->id(),
+            'email'        => $request->attributes->get('auth_email'),
             'formation_id' => $formation->id,
-            'titre' => $formation->titre,
-            'categorie' => $formation->categorie,
-            'niveau' => $formation->niveau,
+            'titre'        => $formation->titre,
         ]);
 
         return response()->json([
-            'message' => 'Formation created successfully',
+            'message'   => 'Formation created successfully',
             'formation' => $this->formatFormation($formation->load('formateur:id,nom'), true),
         ], 201);
     }
@@ -147,27 +118,25 @@ class FormationController extends Controller
      */
     public function update(Request $request, Formation $formation): JsonResponse
     {
-        $this->ensureTrainer($formation);
+        $this->ensureTrainer($request, $formation);
 
         $validated = $request->validate([
-            'titre' => ['required', 'string', 'max:255'],
+            'titre'       => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
-            'categorie' => ['required', 'in:' . implode(',', self::CATEGORIES)],
-            'niveau' => ['required', 'in:' . implode(',', self::NIVEAUX)],
+            'categorie'   => ['required', 'in:' . implode(',', self::CATEGORIES)],
+            'niveau'      => ['required', 'in:' . implode(',', self::NIVEAUX)],
         ]);
 
         $formation->update($validated);
 
         app(ActivityLogService::class)->log('formation.updated', [
-            'user_id' => auth('api')->id(),
+            'email'        => $request->attributes->get('auth_email'),
             'formation_id' => $formation->id,
-            'titre' => $formation->titre,
-            'categorie' => $formation->categorie,
-            'niveau' => $formation->niveau,
+            'titre'        => $formation->titre,
         ]);
 
         return response()->json([
-            'message' => 'Formation updated successfully',
+            'message'   => 'Formation updated successfully',
             'formation' => $this->formatFormation($formation->refresh()->load('formateur:id,nom'), true),
         ]);
     }
@@ -175,16 +144,14 @@ class FormationController extends Controller
     /**
      * Supprime une formation appartenant au formateur connecté.
      */
-    public function destroy(Formation $formation): JsonResponse
+    public function destroy(Request $request, Formation $formation): JsonResponse
     {
-        $this->ensureTrainer($formation);
+        $this->ensureTrainer($request, $formation);
 
         app(ActivityLogService::class)->log('formation.deleted', [
-            'user_id' => auth('api')->id(),
+            'email'        => $request->attributes->get('auth_email'),
             'formation_id' => $formation->id,
-            'titre' => $formation->titre,
-            'categorie' => $formation->categorie,
-            'niveau' => $formation->niveau,
+            'titre'        => $formation->titre,
         ]);
 
         $formation->delete();
@@ -195,17 +162,43 @@ class FormationController extends Controller
     }
 
     /**
-     * Vérifie que l'utilisateur connecté est bien un formateur propriétaire.
+     * Vérifie que l'utilisateur connecté est bien un formateur.
+     * Utilise les attributs injectés par le middleware spring.auth.
      */
-    private function ensureTrainer(?Formation $formation = null): void
+    private function ensureTrainer(Request $request, ?Formation $formation = null): void
     {
-        $user = auth('api')->user();
+        $role  = $request->attributes->get('auth_role', '');
+        $email = $request->attributes->get('auth_email', '');
 
-        abort_unless($user && $user->role === 'formateur', 403, 'Seul un formateur peut gérer les formations.');
+        abort_unless($role === 'formateur', 403, 'Seul un formateur peut gérer les formations.');
 
         if ($formation) {
-            abort_unless((int) $formation->formateur_id === (int) $user->id, 403, 'Vous ne pouvez gérer que vos propres formations.');
+            abort_unless(
+                $formation->formateur_id === $email,
+                403,
+                'Vous ne pouvez gérer que vos propres formations.'
+            );
         }
+    }
+
+    /**
+     * Détermine si la consultation doit incrémenter le compteur de vues.
+     */
+    private function shouldIncrementViews(Formation $formation, Request $request): bool
+    {
+        $email = $request->attributes->get('auth_email');
+
+        if ($email && $formation->formateur_id === $email) {
+            return false;
+        }
+
+        $viewerKey = $email
+            ? 'user:' . $email
+            : 'guest:' . hash('sha256', ($request->ip() ?? 'unknown') . '|' . ($request->userAgent() ?? 'unknown'));
+
+        $cacheKey = sprintf('formation:%d:view:%s', $formation->id, $viewerKey);
+
+        return Cache::add($cacheKey, true, now()->addMinutes(self::VIEW_COOLDOWN_MINUTES));
     }
 
     /**
@@ -216,14 +209,14 @@ class FormationController extends Controller
     private function formatFormation(Formation $formation, bool $withDescription = true): array
     {
         $payload = [
-            'id' => $formation->id,
-            'titre' => $formation->titre,
-            'niveau' => $formation->niveau,
-            'categorie' => $formation->categorie,
-            'vues' => $formation->nombre_de_vues,
-            'apprenants' => (int) ($formation->inscriptions_count ?? 0),
-            'formateur' => [
-                'id' => $formation->formateur_id,
+            'id'          => $formation->id,
+            'titre'       => $formation->titre,
+            'niveau'      => $formation->niveau,
+            'categorie'   => $formation->categorie,
+            'vues'        => $formation->nombre_de_vues,
+            'apprenants'  => (int) ($formation->inscriptions_count ?? 0),
+            'formateur'   => [
+                'id'  => $formation->formateur_id,
                 'nom' => $formation->formateur?->nom,
             ],
             'date_creation' => $formation->date_creation,
@@ -231,14 +224,14 @@ class FormationController extends Controller
 
         if ($withDescription) {
             $payload['description'] = $formation->description;
-            $payload['modules'] = $formation->modules
+            $payload['modules']     = $formation->modules
                 ->sortBy('ordre')
                 ->values()
                 ->map(fn ($module) => [
-                    'id' => $module->id,
-                    'titre' => $module->titre,
+                    'id'      => $module->id,
+                    'titre'   => $module->titre,
                     'contenu' => $module->contenu,
-                    'ordre' => $module->ordre,
+                    'ordre'   => $module->ordre,
                 ]);
         } else {
             $payload['mini_description'] = str($formation->description)->limit(120);
@@ -247,4 +240,3 @@ class FormationController extends Controller
         return $payload;
     }
 }
-
