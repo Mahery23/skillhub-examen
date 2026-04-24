@@ -1,147 +1,179 @@
-name: CI/CD Pipeline — SkillHub + Auth Service
+name: CI/CD — SkillHub
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
   pull_request:
-    branches: [main, develop]
+    branches: [main, dev]
 
 jobs:
 
   # ─────────────────────────────────────────
-  # JOB 1 — Auth Service Spring Boot
+  # JOB 1 — Spring Boot : build + test + sonar
   # ─────────────────────────────────────────
   auth-service:
     name: Auth Service — Build & Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
 
-      - name: Build et tests avec couverture JaCoCo
+      # Install + Test + Coverage JaCoCo
+      - name: Install, Test, Coverage
         working-directory: auth-service
         env:
           APP_MASTER_KEY: test_master_key_for_ci_only_32chars
         run: mvn verify -B
 
-      - name: Analyse SonarCloud — Auth Service
+      # Sonar Spring Boot
+      - name: SonarCloud — Auth Service
         working-directory: auth-service
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          APP_MASTER_KEY: ${{ secrets.APP_MASTER_KEY }}
+          APP_MASTER_KEY: test_master_key_for_ci_only_32chars
         run: |
           mvn sonar:sonar \
             -Dsonar.projectKey=Mahery23_skillhub-examen \
             -Dsonar.organization=mahery23 \
             -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
-            -B
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} -B
 
 
   # ─────────────────────────────────────────
-  # JOB 2 — CI Backend Laravel + Frontend
+  # JOB 2 — Laravel + React : lint + test + sonar
   # ─────────────────────────────────────────
   ci:
-    name: CI — Laravel · React · SonarCloud
+    name: Laravel + React — Lint · Test · Sonar
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ── Node.js ──
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # ── PHP Setup ──
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, zip, bcmath, gd, mongodb-2.2.0
+          coverage: pcov
+
+      # Install Laravel
+      - name: Install — Composer
+        working-directory: ./backend
+        run: |
+          mkdir -p bootstrap/cache storage/logs \
+                   storage/framework/{cache,sessions,views}
+          composer install --no-interaction --optimize-autoloader \
+                           --ignore-platform-req=ext-mongodb
+
+      # Lint Laravel
+      - name: Lint — PHP CS
+        working-directory: ./backend
+        run: ./vendor/bin/phpcs --standard=PSR12 app/ || true
+
+      # Tests Laravel (inclut test limite 5 inscriptions — Q1)
+      - name: Test — Laravel
+        working-directory: ./backend
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:dGVzdGluZ19rZXlfMzJfYnl0ZXNfZm9yX3BocHVuaXRfMjAyNg==
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ":memory:"
+          DB_FOREIGN_KEYS: "false"
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          AUTH_SERVICE_URL: http://localhost:8080
+        run: php artisan test --coverage-clover=coverage.xml
+
+      # ── Node Setup ──
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dépendances frontend
+      # Install + Lint + Test React
+      - name: Install — npm
         working-directory: ./frontend
         run: npm ci
 
-      - name: Lint frontend
+      - name: Lint — ESLint
         working-directory: ./frontend
         run: npm run lint || true
 
-      - name: Tests frontend avec coverage
+      - name: Test — React
         working-directory: ./frontend
         run: npm run test:coverage
 
-      # ── SonarCloud (Laravel + React) ──
-      - name: SonarCloud Scan — Laravel + React
+      # Sonar Laravel + React
+      - name: SonarCloud — Laravel + React
         uses: SonarSource/sonarcloud-github-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      # ── Docker build ──
-      - name: Build images Docker
+
+  # ─────────────────────────────────────────
+  # JOB 3 — Build + Push images Docker
+  # Push uniquement sur merge → main
+  # ─────────────────────────────────────────
+  docker:
+    name: Docker — Build & Push
+    runs-on: ubuntu-latest
+    needs: [auth-service, ci]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build des 3 images taguées avec le SHA du commit
+      - name: Build images
         run: |
           docker build -t skillhub-api:${{ github.sha }} ./backend
+          docker build -t skillhub-auth:${{ github.sha }} ./auth-service
           docker build \
             --build-arg VITE_API_BASE_URL=http://localhost:8000 \
             -t skillhub-frontend:${{ github.sha }} ./frontend
-          docker build -t skillhub-auth:${{ github.sha }} ./auth-service
 
-  # ─────────────────────────────────────────
-  # JOB 3 — CD : push images vers Docker Hub
-  # Uniquement sur merge → main
-  # ─────────────────────────────────────────
-  cd:
-    name: CD — Push to Docker Hub
-    runs-on: ubuntu-latest
-    needs: [auth-service, ci]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
+      # Push vers registry — uniquement sur main
+      - name: Login registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
 
-      - name: Build and push Auth Service
+      - name: Push — Auth Service
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./auth-service
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-auth:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-auth:latest
+            ${{ secrets.REGISTRY_USER }}/skillhub-auth:${{ github.sha }}
+            ${{ secrets.REGISTRY_USER }}/skillhub-auth:latest
 
-      - name: Build and push API Laravel
+      - name: Push — Laravel API
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-api:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-api:latest
+            ${{ secrets.REGISTRY_USER }}/skillhub-api:${{ github.sha }}
+            ${{ secrets.REGISTRY_USER }}/skillhub-api:latest
 
-      - name: Build and push Frontend
+      - name: Push — Frontend
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
-          build-args: |
-            VITE_API_BASE_URL=http://localhost:8000
+          build-args: VITE_API_BASE_URL=http://localhost:8000
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-frontend:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/skillhub-frontend:latest
+            ${{ secrets.REGISTRY_USER }}/skillhub-frontend:${{ github.sha }}
+            ${{ secrets.REGISTRY_USER }}/skillhub-frontend:latest
