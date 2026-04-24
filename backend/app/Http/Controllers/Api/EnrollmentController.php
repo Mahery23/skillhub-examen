@@ -5,24 +5,40 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Enrollment;
 use App\Models\Formation;
-use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Gère l'inscription et la désinscription des apprenants.
+ * Limite : un apprenant ne peut pas s'inscrire à plus de 5 formations simultanément.
  */
 class EnrollmentController extends Controller
 {
+    private const MAX_ENROLLMENTS = 5;
+
     /**
      * Inscrit l'apprenant connecté à une formation.
      */
-    public function store(Formation $formation): JsonResponse
+    public function store(Request $request, Formation $formation): JsonResponse
     {
-        $user = $this->ensureLearner();
+        $email = $request->attributes->get('auth_email');
+
+        // Trouver l'id de l'utilisateur par son email
+        $userId = \App\Models\User::where('email', $email)->value('id');
+
+        $count = Enrollment::query()
+            ->where('utilisateur_id', $userId)
+            ->count();
+
+        if ($count >= self::MAX_ENROLLMENTS) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas vous inscrire à plus de 5 formations simultanément.',
+            ], 400);
+        }
 
         $alreadyEnrolled = Enrollment::query()
-            ->where('utilisateur_id', $user->id)
+            ->where('utilisateur_id', $userId)
             ->where('formation_id', $formation->id)
             ->exists();
 
@@ -33,24 +49,47 @@ class EnrollmentController extends Controller
         }
 
         $enrollment = Enrollment::create([
-            'utilisateur_id' => $user->id,
-            'formation_id' => $formation->id,
-            'progression' => 0,
+            'utilisateur_id' => $userId,
+            'formation_id'   => $formation->id,
+            'progression'    => 0,
+        ]);
+
+        if ($count >= self::MAX_ENROLLMENTS) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas vous inscrire à plus de 5 formations simultanément.',
+            ], 400);
+        }
+
+        $alreadyEnrolled = Enrollment::query()
+            ->where('utilisateur_id', $email)
+            ->where('formation_id', $formation->id)
+            ->exists();
+
+        if ($alreadyEnrolled) {
+            return response()->json([
+                'message' => 'Vous suivez déjà cette formation.',
+            ], 409);
+        }
+
+        $enrollment = Enrollment::create([
+            'utilisateur_id' => $email,
+            'formation_id'   => $formation->id,
+            'progression'    => 0,
         ]);
 
         app(ActivityLogService::class)->log('enrollment.created', [
-            'user_id' => $user->id,
-            'formation_id' => $formation->id,
+            'user_email'    => $email,
+            'formation_id'  => $formation->id,
             'enrollment_id' => $enrollment->id,
         ]);
 
         return response()->json([
-            'message' => 'Enrollment created successfully',
+            'message'    => 'Enrollment created successfully',
             'enrollment' => [
-                'id' => $enrollment->id,
-                'utilisateur_id' => $enrollment->utilisateur_id,
-                'formation_id' => $enrollment->formation_id,
-                'progression' => $enrollment->progression,
+                'id'              => $enrollment->id,
+                'utilisateur_id'  => $enrollment->utilisateur_id,
+                'formation_id'    => $enrollment->formation_id,
+                'progression'     => $enrollment->progression,
                 'date_inscription' => $enrollment->date_inscription,
             ],
         ], 201);
@@ -59,12 +98,12 @@ class EnrollmentController extends Controller
     /**
      * Désinscrit l'apprenant connecté d'une formation suivie.
      */
-    public function destroy(Formation $formation): JsonResponse
+    public function destroy(Request $request, Formation $formation): JsonResponse
     {
-        $user = $this->ensureLearner();
+        $email = $request->attributes->get('auth_email');
 
         $enrollment = Enrollment::query()
-            ->where('utilisateur_id', $user->id)
+            ->where('utilisateur_id', $email)
             ->where('formation_id', $formation->id)
             ->first();
 
@@ -75,8 +114,8 @@ class EnrollmentController extends Controller
         }
 
         app(ActivityLogService::class)->log('enrollment.deleted', [
-            'user_id' => $user->id,
-            'formation_id' => $formation->id,
+            'user_email'    => $email,
+            'formation_id'  => $formation->id,
             'enrollment_id' => $enrollment->id,
         ]);
 
@@ -90,13 +129,13 @@ class EnrollmentController extends Controller
     /**
      * Retourne les formations suivies par l'apprenant connecté.
      */
-    public function mesFormations(): JsonResponse
+    public function mesFormations(Request $request): JsonResponse
     {
-        $user = $this->ensureLearner();
+        $email = $request->attributes->get('auth_email');
 
         $enrollments = Enrollment::query()
-            ->with(['formation' => fn ($query) => $query->with('formateur:id,nom')->withCount('inscriptions')])
-            ->where('utilisateur_id', $user->id)
+            ->with(['formation' => fn ($q) => $q->with('formateur:id,nom')->withCount('inscriptions')])
+            ->where('utilisateur_id', $email)
             ->orderByDesc('date_inscription')
             ->get();
 
@@ -105,19 +144,19 @@ class EnrollmentController extends Controller
                 $formation = $enrollment->formation;
 
                 return [
-                    'enrollment_id' => $enrollment->id,
-                    'progression' => $enrollment->progression,
+                    'enrollment_id'    => $enrollment->id,
+                    'progression'      => $enrollment->progression,
                     'date_inscription' => $enrollment->date_inscription,
-                    'formation' => [
-                        'id' => $formation?->id,
-                        'titre' => $formation?->titre,
+                    'formation'        => [
+                        'id'         => $formation?->id,
+                        'titre'      => $formation?->titre,
                         'description' => $formation?->description,
-                        'niveau' => $formation?->niveau,
-                        'categorie' => $formation?->categorie,
-                        'vues' => $formation?->nombre_de_vues,
+                        'niveau'     => $formation?->niveau,
+                        'categorie'  => $formation?->categorie,
+                        'vues'       => $formation?->nombre_de_vues,
                         'apprenants' => (int) ($formation?->inscriptions_count ?? 0),
-                        'formateur' => [
-                            'id' => $formation?->formateur_id,
+                        'formateur'  => [
+                            'id'  => $formation?->formateur_id,
                             'nom' => $formation?->formateur?->nom,
                         ],
                     ],
@@ -125,17 +164,4 @@ class EnrollmentController extends Controller
             })->values(),
         ]);
     }
-
-    /**
-     * Vérifie que l'utilisateur connecté est un apprenant.
-     */
-    private function ensureLearner(): User
-    {
-        $user = auth('api')->user();
-
-        abort_unless($user && $user->role === 'apprenant', 403, 'Seul un apprenant peut gérer ses inscriptions.');
-
-        return $user;
-    }
 }
-

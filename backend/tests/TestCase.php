@@ -7,18 +7,9 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Mockery;
 
 /**
- * Classe de base pour TOUS les tests Feature et Unit de SkillHub.
- *
- * Role principal :
- *  - Booter l'application Laravel pour chaque test (heritage de BaseTestCase)
- *  - Remplacer automatiquement le service d'ecriture MongoDB par un mock
- *    no-op, pour que les tests ne dependent pas du container mongodb et
- *    ne plantent jamais a cause d'un Mongo injoignable en CI.
- *
- * Consequence : quand un controller appelle `app(ActivityLogService::class)->log(...)`,
- * l'appel est silencieusement avale par le mock (aucune ecriture reelle).
- * Un test qui veut VERIFIER la logique du service peut toujours re-binder
- * un vrai instance localement (voir ActivityLogServiceTest).
+ * Classe de base pour tous les tests SkillHub.
+ * - Mock MongoDB pour éviter la dépendance au container en CI
+ * - Helper withSpringAuth() pour simuler le middleware spring.auth
  */
 abstract class TestCase extends BaseTestCase
 {
@@ -26,8 +17,6 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
-        // shouldIgnoreMissing() : le mock accepte n'importe quel appel de methode
-        // (log, autres) et retourne null par defaut. Parfait pour un no-op.
         $this->app->instance(
             ActivityLogService::class,
             Mockery::mock(ActivityLogService::class)->shouldIgnoreMissing()
@@ -36,10 +25,42 @@ abstract class TestCase extends BaseTestCase
 
     protected function tearDown(): void
     {
-        // Mockery::close() verifie que toutes les expectations "shouldReceive"
-        // ont bien ete declenchees pendant le test. Indispensable pour que les
-        // tests unitaires qui utilisent des mocks stricts soient fiables.
         Mockery::close();
         parent::tearDown();
+    }
+
+    /**
+     * Simule le middleware spring.auth en injectant les attributs
+     * que VerifySpringJWT injecterait normalement après validation du JWT.
+     *
+     * @param string $email Email de l'utilisateur simulé
+     * @param string $role  Rôle : "apprenant" ou "formateur"
+     */
+    protected function withSpringAuth(string $email, string $role = 'apprenant'): static
+    {
+        $this->app->bind(
+            \App\Http\Middleware\VerifySpringJWT::class,
+            fn() => new class($email, $role) {
+                public function __construct(
+                    private string $fakeEmail,
+                    private string $fakeRole
+                ) {}
+
+                public function handle($request, \Closure $next, string ...$roles): mixed
+                {
+                    $request->attributes->set('auth_email', $this->fakeEmail);
+                    $request->attributes->set('auth_role', $this->fakeRole);
+                    $request->attributes->set('auth_name', 'Test User');
+
+                    if (!empty($roles) && !in_array($this->fakeRole, $roles, true)) {
+                        return response()->json(['message' => 'Accès refusé pour ce rôle.'], 403);
+                    }
+
+                    return $next($request);
+                }
+            }
+        );
+
+        return $this;
     }
 }
