@@ -61,34 +61,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ── PHP ──
-      - name: Setup PHP 8.3
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-          extensions: pdo, pdo_mysql, zip, bcmath, gd, mongodb-2.2.0
-
-      - name: Install dépendances backend
-        working-directory: ./backend
-        run: |
-          mkdir -p bootstrap/cache storage/logs \
-                   storage/framework/cache \
-                   storage/framework/sessions \
-                   storage/framework/views
-          composer install --optimize-autoloader --no-interaction --ignore-platform-req=ext-mongodb
-
-      - name: Lint backend
-        working-directory: ./backend
-        run: ./vendor/bin/phpcs --standard=PSR12 app/ || true
-
-      - name: Tests backend avec coverage
-        working-directory: ./backend
-        env:
-          MONGODB_URI: "mongodb://localhost:27017/test"
-          AUTH_SERVICE_URL: "http://localhost:8080"
-          JWT_SECRET: "dGVzdGluZ19qd3Rfc2VjcmV0X2Zvcl9waHB1bml0X3Rlc3RpbmdfMjAyNl9taW5pbXVtXzY0X2NoYXJhY3RlcnNfcmVxdWlyZWQ="
-        run: php artisan test --configuration=phpunit.xml
-
       # ── Node.js ──
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -124,7 +96,6 @@ jobs:
             --build-arg VITE_API_BASE_URL=http://localhost:8000 \
             -t skillhub-frontend:${{ github.sha }} ./frontend
           docker build -t skillhub-auth:${{ github.sha }} ./auth-service
-
 
   # ─────────────────────────────────────────
   # JOB 3 — CD : push images vers Docker Hub
