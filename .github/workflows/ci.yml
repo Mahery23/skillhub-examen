@@ -83,7 +83,10 @@ jobs:
 
       - name: Tests backend avec coverage
         working-directory: ./backend
-        run: php artisan test --env=testing --coverage-clover=coverage.xml
+        env:
+          MONGODB_URI: "mongodb://localhost:27017/test"
+          AUTH_SERVICE_URL: "http://localhost:8080"
+        run: php artisan test --configuration=phpunit.xml
 
       # ── Node.js ──
       - name: Setup Node.js
